@@ -1,5 +1,5 @@
-# Use official Python image
-FROM python:3.11-slim
+# Use official Python image (Debian Bookworm based)
+FROM python:3.11-slim-bookworm
 
 # Install system dependencies for Chrome and Selenium
 RUN apt-get update && apt-get install -y \
@@ -9,12 +9,10 @@ RUN apt-get update && apt-get install -y \
     curl \
     libglib2.0-0 \
     libnss3 \
-    libgconf-2-4 \
     libfontconfig1 \
     libxrender1 \
     libxtst6 \
     libxss1 \
-    libgdk-pixbuf2.0-0 \
     libgtk-3-0 \
     libasound2 \
     libvulkan1 \
