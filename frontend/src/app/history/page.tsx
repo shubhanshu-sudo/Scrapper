@@ -16,7 +16,7 @@ import {
     ChevronLeft,
     ChevronRight
 } from "lucide-react";
-import axios from "axios";
+import { scrapeApi } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function HistoryPage() {
@@ -37,7 +37,7 @@ export default function HistoryPage() {
 
     const fetchKeywords = async () => {
         try {
-            const res = await axios.get("http://127.0.0.1:8000/keywords");
+            const res = await scrapeApi.getKeywords();
             setAvailableKeywords(res.data);
         } catch (err) {
             console.error("Keywords Error:", err);
@@ -47,11 +47,7 @@ export default function HistoryPage() {
     const fetchLeads = useCallback(async () => {
         setLoading(true);
         try {
-            let url = `http://127.0.0.1:8000/leads/all?page=${page}&limit=${limit}`;
-            if (searchTerm) url += `&search=${encodeURIComponent(searchTerm)}`;
-            if (selectedKeyword) url += `&keyword=${encodeURIComponent(selectedKeyword)}`;
-
-            const response = await axios.get(url);
+            const response = await scrapeApi.getAllLeads(page, limit, searchTerm, selectedKeyword || "");
             setLeads(response.data.leads);
             setTotalPages(response.data.pages);
             setTotalLeads(response.data.total);
@@ -90,7 +86,7 @@ export default function HistoryPage() {
     const deleteSingle = async (id: string) => {
         if (!confirm("Are you sure you want to delete this lead?")) return;
         try {
-            await axios.delete(`http://127.0.0.1:8000/leads/${id}`);
+            await scrapeApi.deleteLead(id);
             fetchLeads();
             setSelectedIds(selectedIds.filter(i => i !== id));
         } catch (err) {
@@ -102,7 +98,7 @@ export default function HistoryPage() {
         if (!confirm(`Are you sure you want to delete ${selectedIds.length} leads?`)) return;
         setDeleting(true);
         try {
-            await axios.post("http://127.0.0.1:8000/leads/bulk-delete", { lead_ids: selectedIds });
+            await scrapeApi.bulkDelete(selectedIds);
             fetchLeads();
             setSelectedIds([]);
         } catch (err) {

@@ -9,7 +9,7 @@ import {
   ShieldCheck,
   Server
 } from "lucide-react";
-import axios from "axios";
+import { scrapeApi } from "@/lib/api";
 import { motion } from "framer-motion";
 
 export default function Dashboard() {
@@ -20,7 +20,7 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const statsRes = await axios.get("http://127.0.0.1:8000/stats");
+        const statsRes = await scrapeApi.getStats();
         setStats(statsRes.data);
       } catch (err) {
         console.error("Fetch Stats Error:", err);
@@ -29,7 +29,7 @@ export default function Dashboard() {
 
     const fetchRecentLeads = async () => {
       try {
-        const res = await axios.get("http://127.0.0.1:8000/leads/all?limit=6");
+        const res = await scrapeApi.getAllLeads(1, 6);
         setRecentLeads(res.data.leads);
       } catch (err) {
         console.error("Fetch Leads Error:", err);
