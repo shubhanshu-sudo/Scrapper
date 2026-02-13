@@ -1,0 +1,22 @@
+# Node
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+ENV/
+.env
+
+# Misc
+.DS_Store
+*.log
+.agent/
+.gemini/
+.brain/
+.system_generated/

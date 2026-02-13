@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+pymongo
+motor
+selenium
+webdriver-manager
+gspread
+google-auth
+geopy
+phonenumbers
+python-dotenv
+pydantic
