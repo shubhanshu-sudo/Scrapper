@@ -8,8 +8,7 @@ import {
     History,
     Settings,
     Database,
-    Terminal,
-    LogOut
+    Terminal
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { clsx, type ClassValue } from "clsx";
@@ -45,7 +44,7 @@ export default function Sidebar() {
                 </div>
             </div>
 
-            <nav className="flex-1 px-6 py-4 space-y-2">
+            <nav className="flex-1 px-6 py-4 space-y-2 font-inter">
                 {navItems.map((item) => (
                     <Link
                         key={item.name}
@@ -54,13 +53,15 @@ export default function Sidebar() {
                             "flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-300 group relative overflow-hidden",
                             pathname === item.href
                                 ? "bg-white/5 text-white"
-                                : "text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.02]"
+                                : "text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.01]"
                         )}
                     >
                         {pathname === item.href && (
                             <motion.div
-                                layoutId="active-nav"
+                                layoutId="active-indicator"
                                 className="absolute left-0 w-1 h-6 bg-indigo-500 rounded-r-full"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
                             />
                         )}
                         <item.icon className={cn(
