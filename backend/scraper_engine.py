@@ -3,6 +3,7 @@ import re
 import random
 import os
 import asyncio
+import requests
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -11,10 +12,6 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
-import multiprocessing
-from functools import partial
-from geopy.geocoders import Nominatim
-from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
 import phonenumbers
 from phonenumbers import phonenumberutil
 
@@ -23,8 +20,9 @@ from database import db
 
 def get_country_for_location(location):
     try:
-        geolocator = Nominatim(user_agent="map_scrape_pro_v2.1")
-        location_data = geolocator.geocode(location, addressdetails=True, language="en", timeout=10)
+        from geopy.geocoders import Nominatim
+        geolocator = Nominatim(user_agent="map_scrape_v2_fast")
+        location_data = geolocator.geocode(location, addressdetails=True, language="en", timeout=5)
         if location_data and 'address' in location_data.raw and 'country' in location_data.raw['address']:
             return location_data.raw['address']['country'], location_data.raw['address']['country_code'].upper()
     except:
@@ -41,49 +39,57 @@ def validate_and_get_phone(phone_number_str, country_code):
         pass
     return phone_number_str
 
+def fast_extract_email(url):
+    """Ultra-fast email extraction without opening a browser tab"""
+    if not url or url == "No website": return "No email"
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        response = requests.get(url, headers=headers, timeout=5, verify=False)
+        emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', response.text)
+        if emails:
+            clean = [e for e in emails if not any(x in e.lower() for x in ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'])]
+            return clean[0] if clean else "No email"
+    except:
+        pass
+    return "No email"
+
 def find_and_save_dynamically(keyword, location, user_country, user_country_code, existing_keys, task_id, start_prog, end_prog):
     from main import tasks
     search_query = f"{keyword} in {location}".replace(" ", "+")
     url = f"https://www.google.com/maps/search/{search_query}" 
 
-    service = Service(ChromeDriverManager().install())
     options = webdriver.ChromeOptions()
     options.add_argument('--headless=new') 
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('--window-size=1920,1080')
-    options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+    options.add_argument('--disable-gpu')
+    options.add_argument('--window-size=1280,720')
+    options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
     options.add_argument('--log-level=3')
     
     driver = None
     try:
+        service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
-        wait = WebDriverWait(driver, 20) 
+        wait = WebDriverWait(driver, 10) 
         driver.get(url)
 
         # Handle Privacy Consent
         try:
-            reject_button = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Reject all')] | //button[contains(., 'Rechazar todo')]")))
+            reject_button = WebDriverWait(driver, 3).until(EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Reject all')] | //button[contains(., 'Rechazar todo')]")))
             reject_button.click()
         except: pass
 
-        tasks[task_id].message = f"Discovering leads for '{keyword}'..."
-        tasks[task_id].progress = int(start_prog + (end_prog - start_prog) * 0.05)
-
-        # DEEP SCROLLING
+        tasks[task_id].message = f"Scanning {keyword}..."
+        
+        # FASTER SCROLLING
         try:
             scrollable_div = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'div[role="feed"]')))
-            last_height = driver.execute_script("return arguments[0].scrollHeight", scrollable_div)
-            
-            for s in range(25): 
+            for s in range(15): # Balanced for Render: 15 scrolls give enough results quickly
                 driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", scrollable_div)
-                time.sleep(2)
-                # Incremental progress during scroll (up to 15% of this segment)
-                tasks[task_id].progress = int(start_prog + (end_prog - start_prog) * (0.05 + (s/25)*0.10))
-                
-                new_height = driver.execute_script("return arguments[0].scrollHeight", scrollable_div)
-                if new_height == last_height: break
-                last_height = new_height
+                time.sleep(1.5)
+                # Small progress boost
+                tasks[task_id].progress = int(start_prog + (end_prog - start_prog) * (0.05 + (s/15)*0.10))
         except: pass
 
         business_card_selector = 'a.hfpxzc, a[href*="/maps/place/"]'
@@ -91,25 +97,19 @@ def find_and_save_dynamically(keyword, location, user_country, user_country_code
         business_links = list(dict.fromkeys([elem.get_attribute('href') for elem in elements if elem.get_attribute('href')]))
         
         total_links = len(business_links)
-        added_count = 0
-        original_tab = driver.current_window_handle
-        
-        # Segment progress: 15% spent on discovery, 85% on processing
         proc_start = start_prog + (end_prog - start_prog) * 0.15
         proc_range = (end_prog - start_prog) * 0.85
 
         for i, link in enumerate(business_links):
             try:
-                # Update progress per lead
-                curr_lead_prog = int(proc_start + (i / total_links) * proc_range)
-                tasks[task_id].progress = min(curr_lead_prog, 99)
-                tasks[task_id].message = f"Extracting lead {i+1} of {total_links} for '{keyword}'"
+                tasks[task_id].progress = min(int(proc_start + (i / total_links) * proc_range), 99)
+                tasks[task_id].message = f"Processing {i+1}/{total_links} for {keyword}"
 
                 driver.get(link)
-                time.sleep(2)
+                # Wait for h1 to ensure page load
+                wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'h1')))
                 
-                try: name = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'h1'))).text
-                except: name = "Unknown"
+                name = driver.find_element(By.CSS_SELECTOR, 'h1').text
                 
                 try: website = driver.find_element(By.CSS_SELECTOR, 'a[data-item-id="authority"]').get_attribute('href')
                 except: website = "No website"
@@ -124,9 +124,8 @@ def find_and_save_dynamically(keyword, location, user_country, user_country_code
                 item_key = f"{name}-{address}"
                 
                 if formatted_phone and item_key not in existing_keys:
-                    email = "No email"
-                    # Fast Email check only if needed (Skipping deep check for speed if many results)
-                    # If you want emails always, keep the window.open logic here
+                    # FAST EMAIL EXTRACTION (NO BROWSER TAB)
+                    email = fast_extract_email(website)
                     
                     lead_data = {
                         "name": name, "address": address, "phone": formatted_phone,
@@ -136,17 +135,13 @@ def find_and_save_dynamically(keyword, location, user_country, user_country_code
                     }
                     
                     from database import db_sync
-                    try: 
-                        db_sync.leads.insert_one(lead_data)
-                        added_count += 1
-                        existing_keys.add(item_key)
-                        # Also update total leads found in status
-                        tasks[task_id].leads_found += 1
-                    except: pass
+                    db_sync.leads.insert_one(lead_data)
+                    existing_keys.add(item_key)
+                    tasks[task_id].leads_found += 1
                 
             except: pass
 
-        return added_count
+        return len(business_links)
     finally:
         if driver: driver.quit()
 
@@ -154,32 +149,22 @@ def run_scraper_task(task_id, keywords, locations):
     from main import tasks 
     from database import db_sync 
     
-    total_found = 0
     try:
         existing_keys = set()
         num_queries = len(keywords) * len(locations)
         query_weight = 100 / num_queries if num_queries > 0 else 100
         
-        current_query_idx = 0
-        for kw in keywords:
+        for idx, kw in enumerate(keywords):
             for loc in locations:
-                start_prog = current_query_idx * query_weight
-                end_prog = (current_query_idx + 1) * query_weight
+                start_prog = idx * query_weight
+                end_prog = (idx + 1) * query_weight
                 
                 user_country, user_country_code = get_country_for_location(loc)
-                
-                # Pass range to sub-function for smooth progress
-                find_and_save_dynamically(
-                    kw, loc, user_country, user_country_code, 
-                    existing_keys, task_id, start_prog, end_prog
-                )
-                
-                current_query_idx += 1
+                find_and_save_dynamically(kw, loc, user_country, user_country_code, existing_keys, task_id, start_prog, end_prog)
 
         tasks[task_id].status = "completed"
         tasks[task_id].progress = 100
-        tasks[task_id].message = f"Collection Complete! Total business leads: {tasks[task_id].leads_found}"
-
+        tasks[task_id].message = f"Collection Optimized! Found {tasks[task_id].leads_found} leads."
     except Exception as e:
         tasks[task_id].status = "failed"
         tasks[task_id].message = f"Error: {str(e)}"
